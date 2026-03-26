@@ -36,10 +36,23 @@ LitElement.prototype['createRenderRoot'] = function () {
 };
 
 /**
+ * The render options for a specific element in LitElementRenderer.
+ */
+export interface LitElementRendererRenderOptions {
+  /**
+   * Whether to call connectedCallback during SSR.
+   * @default false
+   */
+  connectedCallback?: boolean;
+}
+
+/**
  * ElementRenderer implementation for LitElements
  */
 export class LitElementRenderer extends ElementRenderer {
   override element: LitElement;
+
+  private _disabled = false;
 
   static override matchesClass(ctor: typeof HTMLElement) {
     // This property needs to remain unminified.
@@ -47,23 +60,26 @@ export class LitElementRenderer extends ElementRenderer {
   }
 
   /**
-   * By default, the renderer will not call connectedCallback during SSR.
-   * However, to enable support for features that depend on connectedCallback, such as
-   * @lit/context, enabling this flag will cause connectedCallback to be called.
-   * To enable, set this to true or add a callback function that returns true for
-   * elements that should have connectedCallback called.
+   * Configure options for a specific element.
+   * This callback is called for each element being rendered and can be used
+   * to configure options such as whether to call connectedCallback for a given
+   * element or to disable SSR.
    *
    * @example
    *
    * ```ts
    * import {LitElementRenderer} from '@lit-labs/ssr';
    *
-   * LitElementRenderer.callConnectedCallback = true;
-   * // or with a callback function
-   * LitElementRenderer.callConnectedCallback = (element) => element.localName === 'my-element';
+   * // Disable SSR for `my-element` by returning false.
+   * LitElementRenderer.renderOptions = (element) => element.localName !== 'my-element';
+   *
+   * // Call connectedCallback for `my-element` by returning an options object with `connectedCallback` set to true.
+   * LitElementRenderer.renderOptions = (element) => element.localName === 'my-element' ? {connectedCallback: true} : true;
    * ```
    */
-  static callConnectedCallback?: boolean | ((element: LitElement) => boolean);
+  static renderOptions?: (
+    element: LitElement
+  ) => boolean | LitElementRendererRenderOptions;
 
   constructor(tagName: string) {
     super(tagName);
@@ -104,21 +120,23 @@ export class LitElementRenderer extends ElementRenderer {
     if (globalThis.litSsrCallConnectedCallback) {
       console.warn(
         'litSsrCallConnectedCallback is deprecated. ' +
-          'Please set LitElementRenderer.callConnectedCallback instead.'
+          'Please use LitElementRenderer.renderOptions instead.'
       );
     }
 
-    const callConnectedCallbackValue = (
-      this.constructor as typeof LitElementRenderer
-    ).callConnectedCallback;
-    const callConnectedCallback =
-      globalThis.litSsrCallConnectedCallback ||
-      callConnectedCallbackValue === true ||
-      (typeof callConnectedCallbackValue === 'function' &&
-        callConnectedCallbackValue(this.element)) ||
-      false;
+    const renderOptions =
+      (this.constructor as typeof LitElementRenderer).renderOptions?.(
+        this.element
+      ) ?? true;
+    if (renderOptions === false) {
+      this._disabled = true;
+      return;
+    }
 
-    if (callConnectedCallback) {
+    if (
+      globalThis.litSsrCallConnectedCallback ||
+      (typeof renderOptions === 'object' && renderOptions?.connectedCallback)
+    ) {
       // Prevent enabling asynchronous updating by overriding enableUpdating
       // with a no-op.
       this.element['enableUpdating'] = function () {};
@@ -129,9 +147,10 @@ export class LitElementRenderer extends ElementRenderer {
         const className = this.element.constructor.name;
         console.warn(
           `Calling ${className}.connectedCallback() resulted in a thrown ` +
-            'error. Consider using a function for `LitElementRenderer.callConnectedCallback` to ' +
-            'prevent calling connectedCallback for unsupported elements or add isServer checks to ' +
-            'your code to prevent calling browser API during SSR.'
+            'error. Consider configuring `LitElementRenderer.renderOptions` ' +
+            'to prevent calling connectedCallback for unsupported elements ' +
+            'or add isServer checks to your code to prevent calling browser ' +
+            'API during SSR.'
         );
         throw e;
       }
@@ -155,7 +174,13 @@ export class LitElementRenderer extends ElementRenderer {
     attributeToProperty(this.element as LitElement, name, value);
   }
 
-  override renderShadow(renderInfo: RenderInfo): ThunkedRenderResult {
+  override renderShadow(
+    renderInfo: RenderInfo
+  ): ThunkedRenderResult | undefined {
+    if (this._disabled) {
+      return undefined;
+    }
+
     const result: ThunkedRenderResult = [];
     // Render styles.
     const styles = (this.element.constructor as typeof LitElement)

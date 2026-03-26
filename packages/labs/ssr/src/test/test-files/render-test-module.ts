@@ -238,14 +238,16 @@ export const setupEvents = (options?: {connectedCallbackElement?: string}) => {
   nextId = 0;
   eventPath = [];
   if (options?.connectedCallbackElement) {
-    LitElementRenderer.callConnectedCallback = (element) =>
-      element.localName === options.connectedCallbackElement;
+    LitElementRenderer.renderOptions = (element) =>
+      element.localName === options.connectedCallbackElement
+        ? {connectedCallback: true}
+        : true;
   } else {
-    LitElementRenderer.callConnectedCallback = true;
+    LitElementRenderer.renderOptions = () => ({connectedCallback: true});
   }
   return {
     eventPath,
-    reset: () => delete LitElementRenderer.callConnectedCallback,
+    reset: () => delete LitElementRenderer.renderOptions,
   };
 };
 
@@ -673,3 +675,25 @@ export const renderServerScriptNotJavaScript = serverhtml`
 // This doesn't have to make sense, the test is that it'll throw at the
 // template preparation phase.
 export const renderServerOnlyElementPart = serverhtml`<div ${'foo'}></div>`;
+
+/* Render Options */
+
+export const setupExclusion = () => {
+  LitElementRenderer.renderOptions = (element) =>
+    element.localName !== 'no-ssr';
+  return {
+    [Symbol.dispose]() {
+      delete LitElementRenderer.renderOptions;
+    },
+  };
+};
+
+@customElement('no-ssr')
+export class NoSsr extends LitElement {
+  override render() {
+    // prettier-ignore
+    return html`<main></main>`;
+  }
+}
+
+export const noSsrTemplate = html`<test-simple></test-simple><no-ssr></no-ssr>`;
