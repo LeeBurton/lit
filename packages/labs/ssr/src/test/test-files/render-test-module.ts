@@ -238,16 +238,17 @@ export const setupEvents = (options?: {connectedCallbackElement?: string}) => {
   nextId = 0;
   eventPath = [];
   if (options?.connectedCallbackElement) {
-    LitElementRenderer.renderOptions = (element) =>
+    LitElementRenderer.renderOptions.add((element) =>
       element.localName === options.connectedCallbackElement
         ? {connectedCallback: true}
-        : true;
+        : undefined
+    );
   } else {
-    LitElementRenderer.renderOptions = () => ({connectedCallback: true});
+    LitElementRenderer.renderOptions.add(() => ({connectedCallback: true}));
   }
   return {
     eventPath,
-    reset: () => delete LitElementRenderer.renderOptions,
+    reset: () => LitElementRenderer.renderOptions.clear(),
   };
 };
 
@@ -679,11 +680,12 @@ export const renderServerOnlyElementPart = serverhtml`<div ${'foo'}></div>`;
 /* Render Options */
 
 export const setupExclusion = () => {
-  LitElementRenderer.renderOptions = (element) =>
-    element.localName !== 'no-ssr';
+  LitElementRenderer.renderOptions.add((element) =>
+    element.localName === 'no-ssr' ? {disableSsr: true} : undefined
+  );
   return {
     [Symbol.dispose]() {
-      delete LitElementRenderer.renderOptions;
+      LitElementRenderer.renderOptions.clear();
     },
   };
 };

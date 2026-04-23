@@ -285,8 +285,9 @@ calling `connectedCallback`, return an object with `connectedCallback` set to
 ```js
 import {LitElementRenderer} from '@lit-labs/ssr';
 
-LitElementRenderer.renderOptions = (element) =>
-  element.localName === 'my-element' ? {connectedCallback: true} : true;
+LitElementRenderer.renderOptions.add((element) =>
+  element.localName === 'my-element' ? {connectedCallback: true} : undefined
+);
 ```
 
 To disable rendering an element during SSR, simply return false for that
@@ -295,8 +296,9 @@ specific element.
 ```js
 import {LitElementRenderer} from '@lit-labs/ssr';
 
-LitElementRenderer.renderOptions = (element) =>
-  element.localName !== 'my-element';
+LitElementRenderer.renderOptions.add((element) =>
+  element.localName === 'my-element' ? {disableSsr: true} : undefined
+);
 ```
 
 ## Notes and limitations

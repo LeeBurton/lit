@@ -44,6 +44,11 @@ export interface LitElementRendererRenderOptions {
    * @default false
    */
   connectedCallback?: boolean;
+  /**
+   * Whether to disable SSR for the element.
+   * @default false
+   */
+  disableSsr?: boolean;
 }
 
 /**
@@ -60,26 +65,30 @@ export class LitElementRenderer extends ElementRenderer {
   }
 
   /**
-   * Configure options for a specific element.
-   * This callback is called for each element being rendered and can be used
-   * to configure options such as whether to call connectedCallback for a given
-   * element or to disable SSR.
+   * Configure options for specific elements.
+   * Callbacks are called in order for each element being rendered and can be
+   * used to configure options such as whether to call connectedCallback for
+   * a given element or to disable SSR.
    *
    * @example
    *
    * ```ts
    * import {LitElementRenderer} from '@lit-labs/ssr';
    *
-   * // Disable SSR for `my-element` by returning false.
-   * LitElementRenderer.renderOptions = (element) => element.localName !== 'my-element';
+   * // Disable SSR for `my-element`.
+   * LitElementRenderer.renderOptions.add(
+   *   (element) => element.localName === 'my-element' ? {disableSsr: true} : undefined
+   * );
    *
    * // Call connectedCallback for `my-element` by returning an options object with `connectedCallback` set to true.
-   * LitElementRenderer.renderOptions = (element) => element.localName === 'my-element' ? {connectedCallback: true} : true;
+   * LitElementRenderer.renderOptions.add(
+   *   (element) => element.localName === 'my-element' ? {connectedCallback: true} : undefined
+   * );
    * ```
    */
-  static renderOptions?: (
-    element: LitElement
-  ) => boolean | LitElementRendererRenderOptions;
+  static readonly renderOptions = new Set<
+    (element: LitElement) => LitElementRendererRenderOptions | undefined
+  >();
 
   constructor(tagName: string) {
     super(tagName);
@@ -124,18 +133,23 @@ export class LitElementRenderer extends ElementRenderer {
       );
     }
 
-    const renderOptions =
-      (this.constructor as typeof LitElementRenderer).renderOptions?.(
-        this.element
-      ) ?? true;
-    if (renderOptions === false) {
+    let renderOptions: LitElementRendererRenderOptions | undefined;
+    for (const optionsCallback of LitElementRenderer.renderOptions) {
+      const options = optionsCallback(this.element);
+      if (options) {
+        renderOptions = options;
+        break;
+      }
+    }
+
+    if (renderOptions?.disableSsr) {
       this._disabled = true;
       return;
     }
 
     if (
       globalThis.litSsrCallConnectedCallback ||
-      (typeof renderOptions === 'object' && renderOptions?.connectedCallback)
+      renderOptions?.connectedCallback
     ) {
       // Prevent enabling asynchronous updating by overriding enableUpdating
       // with a no-op.
